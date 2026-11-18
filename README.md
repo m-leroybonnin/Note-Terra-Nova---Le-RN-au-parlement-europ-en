@@ -1,0 +1,1 @@
+Dû à une mise à jour des données, les résultats présentés ci-dessous peuvent différer à la marge des résultats présentés dans le papier Terra Nova. Les données présentées ici ont été mises à jour le 18 novembre, les données du papier proviennent des données existantes à la mi-octobre 2026.
