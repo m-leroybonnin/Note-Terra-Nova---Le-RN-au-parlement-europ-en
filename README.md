@@ -1,1 +1,2 @@
 Dû à une mise à jour des données, les résultats présentés ci-dessous peuvent différer à la marge des résultats présentés dans le papier Terra Nova. Les données présentées ici ont été mises à jour le 18 novembre, les données du papier proviennent des données existantes à la mi-octobre 2026.
+Le fichier qmd comprends le code de reproduction de l'ensemble des graphiques présents dans le papier. Le fichier pdf est l'exécution du code R/Quarto qui comprends, entre autres, les différents tests liés à la validité des différentes ACP.
