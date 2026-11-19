@@ -1,0 +1,1601 @@
+---
+title: "Code Terra Nova - Le RN au PE, la droite de l'ext droite"
+format: pdf
+editor: visual
+---
+
+
+
+```{r}
+
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(tibble)
+library(psych)
+library(httr)
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(hrbrthemes)
+library(systemfonts)
+library(ragg)
+
+theme_ipsum(base_size = 11, base_family = "Segoe UI")
+
+```
+
+
+
+
+```{r}
+
+
+
+
+url <- "https://howtheyvote.eu/api/votes"
+
+response <- VERB("GET", url, content_type("application/octet-stream"), accept("application/json"),
+  query = list(page = 1, page_size = 200))
+
+data <- content(response, "text") |>
+  fromJSON(flatten = TRUE)
+
+votes <- data$results
+
+
+
+
+response <- VERB("GET", url, content_type("application/octet-stream"), accept("application/json"),
+  query = list(page = 2, page_size = 200))
+
+data <- content(response, "text") |>
+  fromJSON(flatten = TRUE)
+
+votes2 <- data$results
+
+votes <- bind_rows(votes,votes2)
+
+rm(votes2)
+
+
+
+
+response <- VERB("GET", url, content_type("application/octet-stream"), accept("application/json"),
+  query = list(page = 3, page_size = 200))
+
+data <- content(response, "text") |>
+  fromJSON(flatten = TRUE)
+
+votes2 <- data$results
+
+votes <- bind_rows(votes,votes2)
+
+rm(votes2)
+
+
+
+
+
+response <- VERB("GET", url, content_type("application/octet-stream"), accept("application/json"),
+  query = list(page = 4, page_size = 200))
+
+data <- content(response, "text") |>
+  fromJSON(flatten = TRUE)
+
+votes2 <- data$results
+
+votes <- bind_rows(votes,votes2)
+
+rm(votes2)
+
+
+
+
+
+
+votes <- votes %>%
+  filter(id > 169300)
+
+
+
+
+
+
+```
+
+```{r}
+
+
+
+
+# Liste des IDs depuis votre df (adaptez le nom de la colonne)
+vote_ids <- votes$id
+
+
+url <- "https://github.com/HowTheyVote/data/releases/latest/download/member_votes.csv.gz"
+
+tous_les_membres <- read_csv(url, show_col_types = FALSE) %>%
+  filter(vote_id %in% vote_ids)
+
+
+
+
+url <- "https://github.com/HowTheyVote/data/releases/latest/download/members.csv.gz"
+
+members <- read_csv(url, show_col_types = FALSE)
+
+
+
+```
+
+```{r}
+
+members <- merge(tous_les_membres,members, by.x = "member_id", by.y = "id")
+
+members <- merge(members,votes, by.x = "vote_id", by.y = "id")
+
+```
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+
+# Aplatir la colonne topics directement dans le df
+votes_flat_topics <- votes |>
+  unnest(topics, keep_empty = TRUE)
+
+votes_flat_cntry <- votes |>
+  unnest(geo_areas, keep_empty = TRUE)
+
+votes_flat_comm <- votes |>
+  unnest(responsible_committees, keep_empty = TRUE)
+
+```
+
+```{r}
+
+
+
+
+members2 <- members%>%
+  filter(position != "DID_NOT_VOTE")%>%
+  mutate(
+    Yes = ifelse(position == "FOR",1,0),
+    No = ifelse(position == "AGAINST",1,0),
+    Abs = ifelse(position == "ABSTENTION",1,0),
+    Group_Country = paste(group_code,"_",country_code.x)
+    )
+  
+
+```
+
+
+
+```{r}
+
+
+members <- members%>%
+  mutate(
+    Yes = ifelse(position == "FOR",1,0),
+    No = ifelse(position == "AGAINST",1,0),
+    Abs = ifelse(position %in% c("ABSTENTION","DID_NOT_VOTE"),1,0),
+    Group_Country = paste(group_code,"_",country_code.x)
+    )
+  
+
+```
+
+#PCA
+
+```{r}
+
+library(psych)
+
+members_pca <- members2 %>%
+  mutate(position = Yes-No)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+#Analyse Principal Components
+
+```{r}
+
+cor_PC1 <- cor(PC1$PC1, PC1[, -615], use = "pairwise.complete.obs")
+
+cor_PC1 <- t(cor_PC1)
+cor_PC1 <- data.frame(cor_PC1)
+
+cor_PC1 <- rownames_to_column(cor_PC1, var = "vote_id")
+
+
+
+
+cor_PC2 <- cor(PC2$PC2, PC2[, -615], use = "pairwise.complete.obs")
+
+cor_PC2 <- t(cor_PC2)
+cor_PC2 <- data.frame(cor_PC2)
+
+cor_PC2 <- rownames_to_column(cor_PC2, var = "vote_id")
+
+
+
+
+```
+
+```{r}
+
+cor_PC <- merge(cor_PC1,cor_PC2, by = "vote_id")
+
+cor_PC <- cor_PC %>%
+  filter(cor_PC1 > 0.7 | cor_PC2 > 0.7 | cor_PC1 < -0.7 | cor_PC2 < -0.7)
+
+cor_PC <- merge(cor_PC,votes_flat_topics, by.x = "vote_id", by.y = "id")
+
+```
+
+```{r}
+
+
+data_plot <- members_pca2 %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+ggplot(data_plot, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point(alpha = ifelse(data_plot$country_code.x == "FRA", 1, 1)) +
+  coord_fixed(ratio = 0.35) +
+  scale_color_identity(
+    guide  = "legend",
+    name   = "Groupe",
+    breaks = unique(data_plot$couleur),
+    labels = unique(data_plot$group_code)
+  ) +
+  guides(color = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  theme_ipsum(base_size = 11, base_family = "sans") +
+  theme(
+    legend.position = "bottom",
+    legend.title    = element_text(size = 8),
+    legend.text     = element_text(size = 7),
+    legend.key.size = unit(0.4, "cm")
+  ) +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "Composant Principal 2 : Dimension Gauche-Droite",
+    caption = "Données : howtheyvote.eu"
+  )
+
+
+
+
+ggplot(data_plot, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point(alpha = ifelse(data_plot$country_code.x == "FRA", 1, 0.08)) +
+  coord_fixed(ratio = 0.37) +
+  scale_color_identity(
+    guide  = "legend",
+    name   = "Groupe",
+    breaks = unique(data_plot$couleur),
+    labels = unique(data_plot$group_code)
+  ) +
+  guides(color = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  theme_ipsum(base_size = 11, base_family = "sans") +
+  theme(
+    legend.position = "bottom",
+    legend.title    = element_text(size = 8),
+    legend.text     = element_text(size = 7),
+    legend.key.size = unit(0.4, "cm")
+  ) +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "Composant Principal 2 : Dimension Gauche-Droite",
+    caption = "Données : howtheyvote.eu"
+  )
+
+
+
+
+```
+
+```{r}
+
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+
+
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 4, 2),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = Inf
+  ) +
+  coord_fixed(ratio = 0.37) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "CP 2 : Dimension Gauche-Droite",
+    caption = "Données : howtheyvote.eu"
+  )
+
+
+```
+
+#Climat
+
+```{r}
+
+Env <- votes_flat_topics %>%
+  filter(label == "Climate and environment")%>%
+  select(id)
+
+
+Env <- merge(Env,members2, by.x = "id",by.y = "vote_id")
+```
+
+```{r}
+
+
+members_pca <- Env %>%
+  mutate(position = Yes-No)%>%
+  rename(vote_id = id)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+```{r}
+
+cor_PC1 <- cor(PC1$PC1, PC1[, -615], use = "pairwise.complete.obs")
+
+cor_PC1 <- t(cor_PC1)
+cor_PC1 <- data.frame(cor_PC1)
+
+cor_PC1 <- rownames_to_column(cor_PC1, var = "vote_id")
+
+
+
+
+cor_PC2 <- cor(PC2$PC2, PC2[, -615], use = "pairwise.complete.obs")
+
+cor_PC2 <- t(cor_PC2)
+cor_PC2 <- data.frame(cor_PC2)
+
+cor_PC2 <- rownames_to_column(cor_PC2, var = "vote_id")
+
+
+
+
+```
+
+```{r}
+
+cor_PC <- merge(cor_PC1,cor_PC2, by = "vote_id")
+
+cor_PC <- cor_PC %>%
+  filter(cor_PC1 > 0.8 | cor_PC2 > 0.7 | cor_PC1 < -0.8 | cor_PC2 < -0.7)
+
+cor_PC <- merge(cor_PC,votes_flat_topics, by.x = "vote_id", by.y = "id")
+
+```
+
+```{r}
+
+data_plot <- members_pca2
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 3.5, 2),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = Inf,
+    force = 40
+  ) +
+  coord_fixed(ratio = 0.5) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Gauche Droite",
+    y = "CP 2 : Dimension Régulatrice",
+    caption = "Données : howtheyvote.eu"
+  )
+
+
+```
+
+#Migration
+
+```{r}
+
+Migration <- votes_flat_topics %>%
+  filter(label == "Migration")%>%
+  select(id)
+
+
+Migration <- merge(Migration,members2, by.x = "id",by.y = "vote_id")
+```
+
+```{r}
+
+
+members_pca <- Migration %>%
+  mutate(position = Yes-No)%>%
+  rename(vote_id = id)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+```{r}
+
+cor_PC1 <- cor(PC1$PC1, PC1[, -615], use = "pairwise.complete.obs")
+
+cor_PC1 <- t(cor_PC1)
+cor_PC1 <- data.frame(cor_PC1)
+
+cor_PC1 <- rownames_to_column(cor_PC1, var = "vote_id")
+
+
+
+
+cor_PC2 <- cor(PC2$PC2, PC2[, -615], use = "pairwise.complete.obs")
+
+cor_PC2 <- t(cor_PC2)
+cor_PC2 <- data.frame(cor_PC2)
+
+cor_PC2 <- rownames_to_column(cor_PC2, var = "vote_id")
+
+
+
+
+```
+
+```{r}
+
+cor_PC <- merge(cor_PC1,cor_PC2, by = "vote_id")
+
+cor_PC <- cor_PC %>%
+  filter(cor_PC1 > 0.9 | cor_PC2 > 0.8 | cor_PC1 < -0.8 | cor_PC2 < -0.8)
+
+cor_PC <- merge(cor_PC,votes_flat_topics, by.x = "vote_id", by.y = "id")
+
+```
+
+```{r}
+
+data_plot <- members_pca2
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 3.5, 1.8),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = Inf,
+    force = 60
+  ) +
+  coord_fixed(ratio = 0.33) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Gauche Droite",
+    y = "CP 2 : Dimension Européenne",
+    caption = "Données : howtheyvote.eu"
+  )
+
+
+```
+
+#Economy
+
+```{r}
+
+Eco <- votes_flat_comm %>%
+  filter(label == "Economic and Monetary Affairs")%>%
+  select(id)
+
+
+Eco <- merge(Eco,members2, by.x = "id",by.y = "vote_id")
+```
+
+```{r}
+
+
+members_pca <- Eco %>%
+  mutate(position = Yes-No)%>%
+  rename(vote_id = id)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+```{r}
+
+cor_PC1 <- cor(PC1$PC1, PC1[, -615], use = "pairwise.complete.obs")
+
+cor_PC1 <- t(cor_PC1)
+cor_PC1 <- data.frame(cor_PC1)
+
+cor_PC1 <- rownames_to_column(cor_PC1, var = "vote_id")
+
+
+
+
+cor_PC2 <- cor(PC2$PC2, PC2[, -615], use = "pairwise.complete.obs")
+
+cor_PC2 <- t(cor_PC2)
+cor_PC2 <- data.frame(cor_PC2)
+
+cor_PC2 <- rownames_to_column(cor_PC2, var = "vote_id")
+
+
+
+
+```
+
+```{r}
+
+cor_PC <- merge(cor_PC1,cor_PC2, by = "vote_id")
+
+cor_PC <- cor_PC %>%
+  filter(cor_PC1 > 0.7 | cor_PC2 > 0.7 | cor_PC1 < -0.5 | cor_PC2 < -0.7)
+
+cor_PC <- merge(cor_PC,votes_flat_topics, by.x = "vote_id", by.y = "id")
+
+```
+
+```{r}
+
+data_plot <- members_pca2
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 3.5, 2),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = Inf,
+    force = 16
+  ) +
+  coord_fixed(ratio = 0.27) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "CP 2 : Dimension Gauche-Droite",
+    caption = "Données : howtheyvote.eu"
+  )
+
+
+```
+
+#International
+
+```{r}
+
+Int <- votes_flat_topics %>%
+  filter(label == "Foreign affairs")%>%
+  select(id)
+
+
+Int <- merge(Int,members2, by.x = "id",by.y = "vote_id")
+```
+
+```{r}
+
+
+members_pca <- Int %>%
+  mutate(position = Yes-No)%>%
+  rename(vote_id = id)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+```{r}
+
+
+data_plot <- members_pca2
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 3.5, 2),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = Inf,
+    force = 40
+  ) +
+  coord_fixed(ratio = 0.35) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "CP 2 : Dimension Gauche-Droite",
+    caption = "Données : howtheyvote.eu"
+  )
+
+```
+
+#UkrRus
+
+```{r}
+
+
+UkrRus <- votes_flat_cntry %>%
+  filter(label %in% c("Ukraine", "Russia")) %>%
+  group_by(id) %>%
+  slice_sample(n = 1) %>%
+  ungroup()
+
+UkrRus <- merge(UkrRus,members2, by.x = "id",by.y = "vote_id")
+
+
+
+```
+
+```{r}
+
+
+members_pca <- UkrRus %>%
+  mutate(position = Yes-No)%>%
+  rename(vote_id = id)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+```{r}
+
+cor_PC1 <- cor(PC1$PC1, PC1[, -615], use = "pairwise.complete.obs")
+
+cor_PC1 <- t(cor_PC1)
+cor_PC1 <- data.frame(cor_PC1)
+
+cor_PC1 <- rownames_to_column(cor_PC1, var = "vote_id")
+
+
+
+
+cor_PC2 <- cor(PC2$PC2, PC2[, -615], use = "pairwise.complete.obs")
+
+cor_PC2 <- t(cor_PC2)
+cor_PC2 <- data.frame(cor_PC2)
+
+cor_PC2 <- rownames_to_column(cor_PC2, var = "vote_id")
+
+
+
+
+```
+
+```{r}
+
+cor_PC <- merge(cor_PC1,cor_PC2, by = "vote_id")
+
+cor_PC <- cor_PC %>%
+  filter(cor_PC1 > 0.9 | cor_PC2 > 0.2 | cor_PC1 < -0.8 | cor_PC2 < -0.2)
+
+cor_PC <- merge(cor_PC,votes_flat_topics, by.x = "vote_id", by.y = "id")
+
+```
+
+```{r}
+
+data_plot <- members_pca2
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 3.5, 2),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = 32,
+    force = 3
+  ) +
+  coord_fixed(ratio = 0.11) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "CP2",
+    caption = "Données : howtheyvote.eu"
+  )
+
+```
+
+
+
+
+#Transport
+
+
+```{r}
+
+
+
+Tra <- votes_flat_comm %>%
+  filter(label == "Transport and Tourism")%>%
+  select(id)
+
+
+Tra <- merge(Tra,members2, by.x = "id",by.y = "vote_id")
+```
+
+
+```{r}
+
+
+members_pca <- Tra %>%
+  mutate(position = Yes-No)%>%
+  rename(vote_id = id)%>%
+  select(c(vote_id,member_id,country_code.x,group_code,first_name,last_name,Group_Country,position))
+
+members_pca <- members_pca %>%
+  pivot_wider(names_from = vote_id,
+              values_from = position)
+
+members_pca2 <- members_pca %>%
+  select(-c("member_id","country_code.x","group_code","first_name","last_name","Group_Country"))
+
+members_pca2[is.na(members_pca2)] <- 0
+
+pca_result <- principal(members_pca2, nfactors = 2, rotate = "none")
+pca_result
+
+factors <- as.data.frame(pca_result$scores)
+
+members_pca2<-cbind(members_pca, factors)
+
+PC1 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC2))
+
+
+
+PC2 <- members_pca2 %>%
+  select(-c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1))
+
+members_pca2 <- members_pca2%>%
+  select(c(member_id,country_code.x,group_code,first_name,last_name,Group_Country,PC1,PC2))
+
+
+
+
+
+```
+
+
+```{r}
+
+cor_PC1 <- cor(PC1$PC1, PC1[, -615], use = "pairwise.complete.obs")
+
+cor_PC1 <- t(cor_PC1)
+cor_PC1 <- data.frame(cor_PC1)
+
+cor_PC1 <- rownames_to_column(cor_PC1, var = "vote_id")
+
+
+
+
+cor_PC2 <- cor(PC2$PC2, PC2[, -615], use = "pairwise.complete.obs")
+
+cor_PC2 <- t(cor_PC2)
+cor_PC2 <- data.frame(cor_PC2)
+
+cor_PC2 <- rownames_to_column(cor_PC2, var = "vote_id")
+
+
+
+
+```
+
+```{r}
+
+cor_PC <- merge(cor_PC1,cor_PC2, by = "vote_id")
+
+cor_PC <- cor_PC %>%
+  filter(cor_PC1 > 0.9 | cor_PC2 > 0.2 | cor_PC1 < -0.8 | cor_PC2 < -0.2)
+
+cor_PC <- merge(cor_PC,votes_flat_topics, by.x = "vote_id", by.y = "id")
+
+```
+
+
+```{r}
+
+
+data_plot <- members_pca2
+
+groupe1 <- data_plot %>%
+  group_by(group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )
+
+
+
+groupe2 <- data_plot %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+groupe <- bind_rows(groupe1,groupe2)
+
+
+groupe <- groupe %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    )
+  )
+
+
+
+ggplot(groupe, aes(x = PC1, y = PC2, color = couleur)) +
+  geom_point() +
+  geom_point(data = groupe, size = 1.5) +
+  geom_text_repel(
+    data = groupe,
+    aes(label = groupe$Group_Country),
+    size = ifelse(groupe$Group_Country == "PFE _ FRA", 2.8, 2),
+    fontface = ifelse(groupe$Group_Country == "PFE _ FRA", "bold", "plain"),
+    max.overlaps = 16,
+    force = 10
+  ) +
+  coord_fixed(ratio = 0.5) +
+  scale_color_identity(
+    name   = "Groupe",
+    guide  = "legend",
+    breaks = unique(groupe$couleur),
+    labels = unique(groupe$group_code))+
+theme_ipsum(base_size = 11, base_family = "sans") +
+  labs(
+    x = "Composant Principal 1 : Dimension Européenne",
+    y = "CP 2 : Dimension Gauche-Droite",
+    caption = "Données : howtheyvote.eu"
+  )
+
+```
+
+
+
+#Tableau votes communs
+
+```{r}
+
+
+
+FarRight <- members2 %>%
+  filter(Group_Country %in% c("PFE _ FRA"))%>%
+  group_by(vote_id)%>%
+  summarise(
+    Yes = sum(Yes),
+    No = sum(No)
+  )%>%
+  filter(Yes != No)%>%
+  mutate(
+    FR_Position = ifelse(Yes - No>0,"FOR","AGAINST")
+  )%>%
+  select(vote_id,FR_Position)
+
+
+
+members3 <- merge(members2,FarRight, by = "vote_id")
+
+members3 <- members3 %>% mutate(
+  FR_Position2 = ifelse(FR_Position == "FOR",Yes,No)
+)
+
+
+members3 <- members3 %>%
+  group_by(member_id,first_name,last_name,country_code.x,group_code,Group_Country)%>%
+  summarise(nombre_vote = sum(Yes)+sum(No)+sum(Abs),
+            FR_Position = sum(FR_Position2))%>%
+  mutate(
+    FR_Position = FR_Position/nombre_vote
+  )%>%
+  filter(nombre_vote > 10)
+
+
+groupe1 <- members3 %>%
+  group_by(group_code)%>%
+  summarise(
+    FR_Position = mean(FR_Position),
+    nb_observations = n()
+  )%>%
+  mutate(
+    Group_Country=group_code
+  )%>%
+  filter((!Group_Country %in% c("PFE","NI","ECR","ESN")))
+
+
+groupe2 <- members3 %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    FR_Position = mean(FR_Position),
+    nb_observations = n()
+  )%>%
+  filter((Group_Country %in% c("PFE _ CZE","PFE _ HUN","PFE _ ITA","ECR _ POL","ECR _ ITA","ESN _ DEU","EPP _ FRA","RENEW _ FRA","SD _ FRA","GREEN_EFA _ FRA","GUE_NGL _ FRA")))
+  
+
+groupe2 <- bind_rows(groupe1,groupe2)
+
+
+
+
+groupe2 <- groupe2 %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    ),
+    Stat = round(FR_Position*100,1)
+  )
+
+
+
+
+ggplot(groupe2,aes(y = reorder(Group_Country, FR_Position), x = Stat)) +
+  geom_col(fill = groupe2$couleur) +
+  geom_text(aes(label = Stat), vjust = 0.5, size = 3.5,hjust = -0.2) +
+  labs(
+    y = "Délégation",
+    x = "Vote communs avec le RN (en %)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0))
+
+
+
+
+```
+
+
+```{r}
+
+
+groupe2 <- members3 %>%
+  group_by(Group_Country,group_code)%>%
+  summarise(
+    FR_Position = mean(FR_Position),
+    nb_observations = n()
+  )%>%
+mutate(nb_observations = ifelse(Group_Country %in% c("EPP _ FRA","SD _ DNK","SD _ SWE","GREEN_EFA _ FRA","ECR _ FRA","ESN _ FRA"),6000,nb_observations))%>%
+  filter(nb_observations > 7)%>%
+  mutate(nb_observations = case_when(
+    Group_Country == "EPP _ FRA" ~ 6,
+    Group_Country == "SD _ DNK" ~ 3,
+    Group_Country == "SD _ SWE" ~ 5,
+    Group_Country == "GREEN_EFA _ FRA" ~ 5,
+    Group_Country == "ECR _ FRA" ~ 4,
+    Group_Country == "ESN _ FRA" ~ 1,
+    TRUE ~ nb_observations))%>%
+  filter(!(Group_Country %in% c("NI _ DEU")))
+  
+
+
+
+
+groupe2 <- groupe2 %>%
+  mutate(
+    couleur = case_when(
+      group_code == "ESN" ~ "brown4",
+      group_code == "PFE" ~ "black",
+      group_code == "ECR" ~ "blue3",
+      group_code == "EPP" ~ "skyblue2",
+      group_code == "RENEW" ~ "orange",
+      group_code == "SD" ~ "red",
+      group_code == "GREEN_EFA" ~ "green3",
+      group_code == "GUE_NGL" ~ "purple",
+      group_code == "NI" ~ "grey"
+    ),
+    Stat = round(FR_Position*100,1)
+  )
+
+
+
+
+ggplot(groupe2,aes(y = reorder(Group_Country, FR_Position), x = Stat)) +
+  geom_col(fill = groupe2$couleur) +
+  geom_text(aes(label = Stat), vjust = 0.5, size = 3.5,hjust = -0.2) +
+  labs(
+    y = "Délégation",
+    x = "Vote communs avec le RN (en %)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0))
+
+
+
+
+```
+
+
+
